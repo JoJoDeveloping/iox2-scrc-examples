@@ -112,6 +112,7 @@ fn main() -> Result<(), Box<dyn core::error::Error>> {
     println!("subscriber 1 received: {:?}", unsafe { &*sample_1 });
 
     // `Subscriber_2::receive()`;
+    // STORY CODE is folded into the above, as is SAFETY.
     let sample_2: *const PayloadData =
         unsafe { shm_base_subscriber_2.add(offset).cast::<PayloadData>() };
     println!("subscriber 2 received: {:?}", unsafe { &*sample_2 });
