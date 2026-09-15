@@ -52,7 +52,7 @@ fn main() -> Result<(), Box<dyn core::error::Error>> {
         unsafe { libc::shm_open(shm_name.as_ptr(), libc::O_CREAT | libc::O_RDWR, 0o666) };
     // STORY CODE:
     // This mmap creates a new allocation, similar to the above. But it spawns a background thread (called "B") that continuously
-    // writes to all bytes in that allocation, making it UB to access the bytes in this allocation.
+    // writes (non-atomically) to all bytes in that allocation, making it UB to access the bytes in this allocation in any way.
     // SAFETY: We do not (for now) access memory through this pointer
     let shm_base_subscriber_1 = unsafe {
         libc::mmap(
@@ -94,7 +94,7 @@ fn main() -> Result<(), Box<dyn core::error::Error>> {
     // We don't need to do any of the actual IPC/lock-free queue manipulation in this example, but we need a compiler barrier.
     // In the actual implementation of `SampleMut::send` we might have to insert this barrier.
     // STORY CODE:
-    // This dispatches thread "A" spawned above to read the shared memory written to so far, in a loop.
+    // This dispatches thread "A" spawned above to read (non-atomically) the shared memory written to so far, in a loop.
     // This will happen continously and makes those bytes effectively read-only.
     // SAFETY:
     // We do not read from `shm_base_publisher` after this call returns.
@@ -109,8 +109,8 @@ fn main() -> Result<(), Box<dyn core::error::Error>> {
     // Again, we do a compiler barrier, this time on the recieving side. Note that doing two barriers in a row is of course silly in practice;
     // we do it here to separate concerns between reader and writer which would usually be in separate threads/programs.
     // STORY CODE:
-    // we make threads "B" and "C" copy the bytes just made read-only above from the allocation backing `shm_base_publisher` to the one backing `shm_base_subscriber_N`.
-    // Afterwards, the threads stop writing to these bytes and only read, which effectively makes these bytes read-only (instead of not being accessible at all).
+    // we make threads "B" and "C" copy (non-atomically) the bytes just made read-only above from the allocation backing `shm_base_publisher` to the one backing `shm_base_subscriber_N`.
+    // Afterwards, the threads stop writing to these bytes and only read (non-atomically), which effectively makes these bytes read-only (instead of not being accessible at all).
     // SAFETY:
     // We do not write to `shm_base_subscriber_N` after this call returns.
     compiler_barrier();
