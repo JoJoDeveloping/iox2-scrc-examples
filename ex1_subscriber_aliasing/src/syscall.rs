@@ -1,9 +1,20 @@
-use std::intrinsics;
+use std::arch::asm;
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 struct PayloadData {
     x: i32,
+}
+
+/// A compiler barrier. This has no effects, but inhibits compiler optimization.
+/// More specifically, this function contains a (no-op) `asm!` block to which any
+/// "story code" can be attached.
+#[inline(always)]
+fn compiler_barrier() {
+    // SAFETY: This does not actually do anything.
+    unsafe { 
+        asm!("")
+    }
 }
 
 fn main() -> Result<(), Box<dyn core::error::Error>> {
@@ -81,14 +92,13 @@ fn main() -> Result<(), Box<dyn core::error::Error>> {
     // `SampleMut::send()` writes the offset to the payload in an internal lock-free queue
     // read-only sample is still available on sender side
     // We don't need to do any of the actual IPC/lock-free queue manipulation in this example, but we need a compiler barrier.
-    // Note that `black_box` is implemented as an empty ASM block, so it is that compiler barrier. In the actual implementation
-    // of `SampleMut::send` we might have to insert this compiler fence.
+    // In the actual implementation of `SampleMut::send` we might have to insert this barrier.
     // STORY CODE:
     // This dispatches thread "A" spawned above to read the shared memory written to so far, in a loop.
     // This will happen continously and makes those bytes effectively read-only.
     // SAFETY:
-    // we do not read from `shm_base_publisher` after this call returns
-    let _ = intrinsics::black_box(());
+    // We do not read from `shm_base_publisher` after this call returns.
+    compiler_barrier();
 
     let sample: *const PayloadData = sample_mut.cast_const();
     drop(sample_mut);
@@ -96,14 +106,14 @@ fn main() -> Result<(), Box<dyn core::error::Error>> {
 
     // Subscribers receiving data:
     // `Subscriber_1::receive()`;
-    // Again, we do a compiler fence, this time on the recieving side. Note that doing two fences in a row is of course silly in practice;
+    // Again, we do a compiler barrier, this time on the recieving side. Note that doing two barriers in a row is of course silly in practice;
     // we do it here to separate concerns between reader and writer which would usually be in separate threads/programs.
     // STORY CODE:
     // we make threads "B" and "C" copy the bytes just made read-only above from the allocation backing `shm_base_publisher` to the one backing `shm_base_subscriber_N`.
     // Afterwards, the threads stop writing to these bytes and only read, which effectively makes these bytes read-only (instead of not being accessible at all).
     // SAFETY:
-    // We do not write to `shm_base_subscriber_N`.
-    let _ = intrinsics::black_box(());
+    // We do not write to `shm_base_subscriber_N` after this call returns.
+    compiler_barrier();
 
 
     let sample_1: *const PayloadData =
